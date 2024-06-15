@@ -206,7 +206,7 @@ def create(args):
     ngrok_listener = start_ngrok(port=str(port))
 
     content = render_action(environment=args.env, runs_on="ubuntu-latest",
-                            url=ngrok_listener.url, keys=args.val)
+                            url=ngrok_listener.url(), keys=args.val)
     # should be in another thread
     thread = threading.Thread(target=wait_for_response, args=(port))
     # Start the thread
@@ -227,13 +227,16 @@ def create(args):
     # dump YAML content into action file
     action_file_path = os.path.join(
         args.path, ".github", "workflows", "dummy_action.yml")
-    dump_action_yaml(args.path, yaml_content=content)
+    dump_action_yaml(action_file_path, yaml_content=content)
     print(fmt_color(f"Action file created: ", GREEN) +
           fmt_color(f"{action_file_path}", CYAN))
 
     # Stage and commit the changes
     repo.index.add([action_file_path])
     repo.index.commit("Add dummy GitHub action")
+    # push the changes 
+    origin = repo.remote(name='origin')
+    origin.push(refspec=branch_name)
 
     # Create a pull request
     g = Github(args.gh_token)
@@ -260,6 +263,20 @@ def create(args):
     print(fmt_color(f"Branch deleted: ", GREEN) +
           fmt_color(f"{branch_name}", CYAN))
 
+
+def create2(args):
+    print(args)
+    repo, owner, repo_name = local_repo(args.path)
+        # Create a pull request
+    g = Github(args.gh_token)
+    github_repo = g.get_repo(owner + "/" + repo_name)
+    pr = github_repo.create_pull(
+        title="Add dummy GitHub action",
+        body="This PR adds a dummy GitHub action that echoes 'dummy'.",
+        head="prefix-nhn9eiz1",
+        base="main"  # or the default branch of your repo
+    )
+    print("ok")
 
 def main():
     parser = argparse.ArgumentParser(
