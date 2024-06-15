@@ -11,20 +11,14 @@ from git import Repo
 from github import Github
 import re
 from http.server import HTTPServer, BaseHTTPRequestHandler
-import logging
 import ngrok
 import threading
-
-import signal
 from functools import wraps
 import os
 import signal
-import subprocess
-import sys
-from http.server import BaseHTTPRequestHandler, HTTPServer
-import ngrok
 import json
 
+httpd = None 
 
 def render_action(environment, runs_on, url, keys):
     yaml_template = """
@@ -62,33 +56,34 @@ def get_port():
 
 class TimeoutException(Exception):
     pass
-
+class OKCloseException(Exception):
+    pass
 
 def timeout(seconds):
     def decorator(func):
-        def _handle_timeout(signum, frame):
-            raise TimeoutException("Function call timed out")
-
         @wraps(func)
         def wrapper(*args, **kwargs):
-            signal.signal(signal.SIGALRM, _handle_timeout)
-            signal.alarm(seconds)
-            try:
-                result = func(*args, **kwargs)
-            except TimeoutException:
-                result = None
-            finally:
-                signal.alarm(0)
+            # Container to store the result or exception
+            result_container = []
+
+            def target_func(*args, **kwargs):
+                try:
+                    result = func(*args, **kwargs)
+                    result_container.append((True, result))
+                except Exception as e:
+                    result_container.append((False, e))
+
+            thread = threading.Thread(target=target_func, args=args, kwargs=kwargs)
+            thread.start()
+            thread.join(seconds)
+            if thread.is_alive():
+                raise TimeoutException("Function call timed out")
+            success, result = result_container[0]
+            if not success:
+                raise result
             return result
         return wrapper
     return decorator
-
-
-# Example usage
-@timeout(5)
-def long_running_function():
-    time.sleep(10)
-    return "Finished"
 
 
 # Define ANSI escape codes for colors
@@ -138,9 +133,13 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.send_header('Content-type', 'text/plain')
         self.end_headers()
         self.wfile.write(post_data)
+        # https://docs.python.org/3/library/socketserver.html#socketserver.BaseServer.shutdown
+        # shutdown() must be called while serve_forever() is running in a different thread otherwise it will deadlock.
+        threading.Thread(target=self.server.shutdown).start()
 
 
 def run_server(port, handler=RequestHandler):
+    global httpd 
     server_address = ('', port)
     httpd = HTTPServer(server_address, handler)
     print(f'Starting HTTP server on port {port}')
@@ -161,13 +160,13 @@ def wait_for_response(port):
         return True
     except TimeoutException:
         print("TimeoutException Function call timed out")
-        return False
+        raise TimeoutException
     except KeyboardInterrupt:
         print('KeyboardInterrupt Stopping server...')
-        return False
+        raise KeyboardInterrupt
     except Exception as e:
         print(f"Exception: {e}")
-        return False
+        raise e
 
 
 def local_repo(localpath):
@@ -208,13 +207,14 @@ def create(args):
     content = render_action(environment=args.env, runs_on="ubuntu-latest",
                             url=ngrok_listener.url(), keys=args.val)
     # should be in another thread
-    thread = threading.Thread(target=wait_for_response, args=(port))
+    thread = threading.Thread(target=wait_for_response, args=(port,))
     # Start the thread
     thread.start()
 
     print(f"Repo path: {args.path}")
     repo, owner, repo_name = local_repo(args.path)
-
+    # get current branch 
+    original_branch = repo.active_branch
     # Create and checkout the new branch
     random_suffix = ''.join(random.choices(
         string.ascii_lowercase + string.digits, k=8))
@@ -252,14 +252,18 @@ def create(args):
           fmt_color(f"{pr.html_url}", CYAN))
 
     thread.join()
-
     # close the pull request
     pr.edit(state="closed")
     print(fmt_color(f"Pull request closed: ", GREEN) +
           fmt_color(f"{pr.html_url}", CYAN))
 
+    # checkout to main branch
+    repo.git.checkout(original_branch)
+    # delete the branch with -D 
+    repo.git.branch('-D', branch_name)
     # delete the branch
-    repo.delete_head(branch_name)
+    # repo.delete_head(branch_name)
+    
     print(fmt_color(f"Branch deleted: ", GREEN) +
           fmt_color(f"{branch_name}", CYAN))
 
