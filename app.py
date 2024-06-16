@@ -107,6 +107,8 @@ def print_color(text, color):
 
 
 class RequestHandler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        pass
     def do_GET(self):
         if self.path == '/':
             self.send_response(200)
@@ -200,12 +202,15 @@ def dump_action_yaml(action_file_path, yaml_content):
 
 
 def create(args):
-
+    
     port = get_port()
     ngrok_listener = start_ngrok(port=str(port))
 
     content = render_action(environment=args.env, runs_on="ubuntu-latest",
                             url=ngrok_listener.url(), keys=args.val)
+    if args.dump_action:
+        print(content)
+        exit(0)
     # should be in another thread
     thread = threading.Thread(target=wait_for_response, args=(port,))
     # Start the thread
@@ -284,8 +289,9 @@ def create2(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Fetch Info from Github repository environment variables')
-    subparsers = parser.add_subparsers(dest='cmd', help='Help...')
+        usage='%(prog)s create --env staging --val vars.REPO_ENV -t <GH_TOKEN> -p $(pwd)',
+        description='''Fetch Info from Github repository environment variables''')
+    subparsers = parser.add_subparsers(dest='cmd', help='')
 
     create_parser = subparsers.add_parser('create', help='Fetch data')
     create_parser.add_argument(
@@ -297,6 +303,9 @@ def main():
                                help='.secrets / .env values to fetch', required=True)
     create_parser.add_argument(
         '-e', '--env', type=str, help='Github Environment to set in action file', default=None)
+    # add boolean flag --dump-action with default false 
+    create_parser.add_argument(
+        '--dump-action', action='store_true', help='Dump the action file to the repo')
 
     create_parser.set_defaults(func=create)
 
