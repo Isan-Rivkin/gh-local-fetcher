@@ -1,3 +1,5 @@
+#!/Users/isan/fun/gh-local-fetcher/.venv/bin/python
+
 import argparse
 
 
@@ -201,8 +203,12 @@ def dump_action_yaml(action_file_path, yaml_content):
         f.write(yaml_content)
 
 
-def create(args):
-    
+def fetch(args):
+    # assert if args.gh_token not set 
+    if not args.gh_token:
+        print_color(
+            "Missing GitHub API token (-t/--gh-token or GH_LOCAL_FETCHER_TOKEN environment variable) ", RED)
+        exit(1)
     port = get_port()
     ngrok_listener = start_ngrok(port=str(port))
 
@@ -277,41 +283,29 @@ def create(args):
           fmt_color(f"{branch_name}", CYAN))
 
 
-def create2(args):
-    print(args)
-    repo, owner, repo_name = local_repo(args.path)
-        # Create a pull request
-    g = Github(args.gh_token)
-    github_repo = g.get_repo(owner + "/" + repo_name)
-    pr = github_repo.create_pull(
-        title="Add dummy GitHub action",
-        body="This PR adds a dummy GitHub action that echoes 'dummy'.",
-        head="prefix-nhn9eiz1",
-        base="main"  # or the default branch of your repo
-    )
-    print("ok")
-
+GH_LOCAL_FETCHER_TOKEN = os.getenv('GH_LOCAL_FETCHER_TOKEN')
 def main():
+    
     parser = argparse.ArgumentParser(
-        usage='%(prog)s create --env staging --val vars.REPO_ENV -t <GH_TOKEN> -p $(pwd)',
+        usage='%(prog)s fetch --env staging --val vars.REPO_ENV -t <GH_TOKEN> -p $(pwd)',
         description='''Fetch Info from Github repository environment variables''')
     subparsers = parser.add_subparsers(dest='cmd', help='')
 
-    create_parser = subparsers.add_parser('create', help='Fetch data')
-    create_parser.add_argument(
+    fetch_parser = subparsers.add_parser('fetch', help='Fetch data')
+    fetch_parser.add_argument(
         '--path', '-p', type=str, help='Local Git Repo Path', default=None)
-    create_parser.add_argument(
-        '--gh-token', '-t', type=str, help='Github API Token', default=None)
+    fetch_parser.add_argument(
+        '--gh-token', '-t', type=str, help='Github API Token (ENV: GH_LOCAL_FETCHER_TOKEN if set)', default=GH_LOCAL_FETCHER_TOKEN)
     # add argument for list of environment variables
-    create_parser.add_argument('-v', '--val', action='append',
+    fetch_parser.add_argument('-v', '--val', action='append',
                                help='.secrets / .env values to fetch', required=True)
-    create_parser.add_argument(
+    fetch_parser.add_argument(
         '-e', '--env', type=str, help='Github Environment to set in action file', default=None)
     # add boolean flag --dump-action with default false 
-    create_parser.add_argument(
+    fetch_parser.add_argument(
         '--dump-action', action='store_true', help='Dump the action file to the repo')
 
-    create_parser.set_defaults(func=create)
+    fetch_parser.set_defaults(func=fetch)
 
     options = parser.parse_args()
     options.func(options)
