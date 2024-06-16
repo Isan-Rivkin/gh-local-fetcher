@@ -262,6 +262,10 @@ def create(args):
     print(fmt_color(f"Pull request closed: ", GREEN) +
           fmt_color(f"{pr.html_url}", CYAN))
 
+
+    # do git push origin -d branch_name (delete branch from remote)
+    origin.push(refspec=[f':{branch_name}'])
+    
     # checkout to main branch
     repo.git.checkout(original_branch)
     # delete the branch with -D 
